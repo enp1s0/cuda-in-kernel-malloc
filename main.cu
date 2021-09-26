@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono>
 
 const unsigned max_block_size = 1024;
 
@@ -44,8 +45,8 @@ __global__ void kernel_one_thread_malloc(void** ptr /*For side effect*/,
 	}
 }
 
-int main() {
-	std::printf("block_size,mode,malloc_clock,free_clock\n");
+void in_block_test() {
+	std::printf("block_size,mode,malloc_clock,free_clock,kernel_time\n");
 	float **ptr;
 	cudaMalloc(&ptr, sizeof(float*) * max_block_size);
 	unsigned long long *total_malloc_clock, *total_free_clock;
@@ -55,18 +56,34 @@ int main() {
 	for (unsigned b = 1; b <= max_block_size; b++) {
 		*total_malloc_clock = 0llu;
 		*total_free_clock = 0llu;
-		kernel_all_threads_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
 		cudaDeviceSynchronize();
-		std::printf("%u,all,%e,%e\n", b, static_cast<double>(*total_malloc_clock) / b, static_cast<double>(*total_free_clock) / b);
+		const auto t0 = std::chrono::system_clock::now();
+		kernel_all_threads_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
+		const auto t1 = std::chrono::system_clock::now();
+		cudaDeviceSynchronize();
+		std::printf("%u,all,%e,%e,%lu\n", b,
+				static_cast<double>(*total_malloc_clock) / b,
+				static_cast<double>(*total_free_clock) / b,
+				std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
 	}
 	for (unsigned b = 1; b <= max_block_size; b++) {
 		*total_malloc_clock = 0llu;
 		*total_free_clock = 0llu;
-		kernel_one_thread_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
 		cudaDeviceSynchronize();
-		std::printf("%u,one,%e,%e\n", b, static_cast<double>(*total_malloc_clock) / b, static_cast<double>(*total_free_clock) / b);
+		const auto t0 = std::chrono::system_clock::now();
+		kernel_one_thread_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
+		const auto t1 = std::chrono::system_clock::now();
+		cudaDeviceSynchronize();
+		std::printf("%u,all,%e,%e,%lu\n", b,
+				static_cast<double>(*total_malloc_clock) / b,
+				static_cast<double>(*total_free_clock) / b,
+				std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
 	}
 	cudaFreeHost(total_malloc_clock);
 	cudaFreeHost(total_free_clock);
 	cudaFree(ptr);
+}
+
+int main() {
+	in_block_test();
 }
