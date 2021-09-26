@@ -74,7 +74,7 @@ void in_block_test() {
 		kernel_one_thread_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
 		const auto t1 = std::chrono::system_clock::now();
 		cudaDeviceSynchronize();
-		std::printf("%u,all,%e,%e,%lu\n", b,
+		std::printf("%u,one,%e,%e,%lu\n", b,
 				static_cast<double>(*total_malloc_clock) / b,
 				static_cast<double>(*total_free_clock) / b,
 				std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
