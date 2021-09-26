@@ -37,7 +37,7 @@ __global__ void kernel_one_thread_malloc(void** ptr /*For side effect*/,
 		ptr[tid] = p;
 
 		const auto t2 = clock64();
-		free(ptr[tid]);
+		free(p);
 		const auto t3 = clock64();
 
 		atomicAdd(total_malloc_clock, t1 - t0);
