@@ -2,51 +2,71 @@
 
 const unsigned max_block_size = 1024;
 
-__global__ void kernel_all_threads_malloc(void** ptr /*For side effect*/) {
+__global__ void kernel_all_threads_malloc(void** ptr /*For side effect*/,
+		unsigned long long* total_malloc_clock,
+		unsigned long long* total_free_clock
+		) {
 	const auto tid = threadIdx.x;
+	void* p;
 
 	const auto t0 = clock64();
-	ptr[tid] = malloc(sizeof(float));
+	p = malloc(sizeof(float));
 	const auto t1 = clock64();
+	ptr[tid] = p;
 
 	const auto t2 = clock64();
-	free(ptr[tid]);
+	free(p);
 	const auto t3 = clock64();
 
-
-	if (threadIdx.x == 0) {
-		printf("%u,all,%llu,%llu\n", blockDim.x, t1 - t0, t3 - t2);
-	}
+	atomicAdd(total_malloc_clock, t1 - t0);
+	atomicAdd(total_free_clock, t3 - t2);
 }
 
-__global__ void kernel_one_thread_malloc(void** ptr /*For side effect*/) {
+__global__ void kernel_one_thread_malloc(void** ptr /*For side effect*/,
+		unsigned long long* total_malloc_clock,
+		unsigned long long* total_free_clock
+		) {
 	const auto tid = threadIdx.x;
+	void* p;
 
-	if (threadIdx.x == 0) {
+	if (tid == 0) {
 		const auto t0 = clock64();
-		ptr[tid] = malloc(sizeof(float) * blockDim.x);
+		p = malloc(sizeof(float) * blockDim.x);
 		const auto t1 = clock64();
+		ptr[tid] = p;
 
 		const auto t2 = clock64();
 		free(ptr[tid]);
 		const auto t3 = clock64();
 
-		printf("%u,one,%llu,%llu\n", blockDim.x, t1 - t0, t3 - t2);
+		atomicAdd(total_malloc_clock, t1 - t0);
+		atomicAdd(total_free_clock, t3 - t2);
 	}
 }
 
 int main() {
-	std::printf("block_size,malloc_mode,malloc_clock,free_clock\n");
+	std::printf("block_size,mode,malloc_clock,free_clock\n");
 	float **ptr;
-	for (unsigned b = 1; b < max_block_size; b++) {
-		cudaMalloc(&ptr, sizeof(float*) * max_block_size);
-		kernel_all_threads_malloc<<<1, b>>>((void**)ptr);
-		cudaFree(ptr);
+	cudaMalloc(&ptr, sizeof(float*) * max_block_size);
+	unsigned long long *total_malloc_clock, *total_free_clock;
+	cudaMallocHost(&total_malloc_clock, sizeof(unsigned long long));
+	cudaMallocHost(&total_free_clock, sizeof(unsigned long long));
+
+	for (unsigned b = 1; b <= max_block_size; b++) {
+		*total_malloc_clock = 0llu;
+		*total_free_clock = 0llu;
+		kernel_all_threads_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
+		cudaDeviceSynchronize();
+		std::printf("%u,all,%e,%e\n", b, static_cast<double>(*total_malloc_clock) / b, static_cast<double>(*total_free_clock) / b);
 	}
 	for (unsigned b = 1; b <= max_block_size; b++) {
-		cudaMalloc(&ptr, sizeof(float*) * max_block_size);
-		kernel_one_thread_malloc<<<1, b>>>((void**)ptr);
-		cudaFree(ptr);
+		*total_malloc_clock = 0llu;
+		*total_free_clock = 0llu;
+		kernel_one_thread_malloc<<<1, b>>>((void**)ptr, total_malloc_clock, total_free_clock);
+		cudaDeviceSynchronize();
+		std::printf("%u,one,%e,%e\n", b, static_cast<double>(*total_malloc_clock) / b, static_cast<double>(*total_free_clock) / b);
 	}
-	cudaDeviceSynchronize();
+	cudaFreeHost(total_malloc_clock);
+	cudaFreeHost(total_free_clock);
+	cudaFree(ptr);
 }
